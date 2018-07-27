@@ -1,0 +1,242 @@
+# Recommender System based on Visitor's number of visits on Ecommerce data
+
+# event data
+
+events = spark.read.options(header=True, inferSchema=True).csv('/user/capstone/events.csv')
+events.count()
+
+# groupby visitor
+
+visitorGroupBy = events.groupBy('visitorid').count()
+
+visitorGroupBy.show(5)
+
+visitorGroupBy.count()
+
+# select visitor who has more than one
+
+visitorGt1 = visitorGroupBy.filter(visitorGroupBy['count']>1)
+
+visitorGt1.count()
+
+# join events with visitor who has visited more than once
+
+eventsJoinVisitorGt1 = events.join(visitorGt1, ['visitorid'])
+
+eventsJoinVisitorGt1.count()
+
+eventsJoinVisitorGt1.show(5)
+
+# Assign event's  values
+
+>>> viewreplace = eventsJoinVisitorGt1.replace({'view':'1'})
+
+>>> addtocartreplace = viewreplace.replace({'addtocart':'2'})
+
+>>> final = addtocartreplace.replace({'transaction':'3'})
+
+>>> final.show(5)
+
+# Extract the data for MatrixFactorization
+
+>>> data = final['visitorid','itemid','event']
+
+>>> data.show(5)
+
+data.coalesce(1).write.option('header','true').csv('/user/capstone/CountWiseVisitor.csv')
+
+
+# Creating RDD file
+
+# Option A. For comma(text) seperated data 
+
+# from pyspark.sql import Row
+# parts = data_A.map(lambda row: row.value.split(','))
+# CountRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
+
+# Option B. For  .CSV data
+
+# data = sc.textFile('/user/maria_dev/CountWiseVisitor.csv')
+# from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+#CountRating = dataWithNoHeader.map(lambda x: x.split(','))\
+#.map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
+
+
+type(data)
+
+data.first()
+
+header=data.first()
+
+# Removing header from RDD data
+
+dataWithNoHeader = data.filter(lambda x: x!=header)
+
+dataWithNoHeader.first()
+
+# Load ALS module, MatrixFactorizationModel, Rating
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+# Creating DataFrame from RDD
+
+df = sqlContext.createDataFrame(CountRating)
+
+# Data exploration on CountRating
+
+# Distinct Users
+
+df.select('user').distinct().show(5)
+
+# Distinct Users's count
+
+df.select('user').distinct().count()
+
+# Distinct Products and count
+
+df.select('product').distinct().show(5)
+
+df.select('product').distinct().count()
+
+# GroupBy User
+
+df.groupBy('visitorid').count().take(5)
+
+# GroupBy User stats
+
+df.groupBy('visitorid').count().select('count').describe().show()
+
+df.stat.crosstab('visitorid','event').show(5)
+
+# 1. Build the recommendation model using Alternating Least Squares
+
+# Splitting the CountRating data
+
+(training,test) = CountRating.randomSplit([0.8,0.2])
+
+training.count()
+
+test.count()
+
+# Call the ALS.train mehod to train the model
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+rank = 10
+numIterations = 10
+model = ALS.train(training, rank, numIterations)
+
+model
+
+# Evaluate the model on training data
+
+testdata = test.map(lambda r: (r[0],r[1]))
+
+type(testdata)
+
+test.take(5) # a
+
+# Making predictions
+
+pred_ind = model.predict(user, product) # from a to get prediction for user and product
+
+pred_ind
+
+predictions = model.predictAll(testdata).map(lambda r: ((r[0], r[1]),r[2]))
+
+predictions.take(5)
+
+type(predictions)
+
+# Recommend Products For Users method to generate the top N item recommendations for users
+
+recommendItemsToUsers = model.recommendProductsForUsers(10)
+
+recommendItemsToUsers.take(1)
+
+recommendItemsToUsers.count()
+
+# Calculate rmse
+
+from math import sqrt
+
+ratesAndPreds = CountRating.map(lambda r: ((r[0],r[1]), r[2])).join(predictions)
+
+ratesAndPreds.take(5)
+
+MeanSquareError = ratesAndPreds.map(lambda r: (r[1][0]-r[1][1])**2).mean()
+
+print("MeanSquareError = " + str(MeanSquareError))
+
+MeanSquareError = 0.155165298401
+
+# Root Mean Square Error
+
+from math import sqrt
+
+rmse = sqrt(MeanSquareError)
+
+print("Root_Mean_Square_Error = " + str(rmse))
+
+# 2.  Model Evluation and Selection with Hyper Parameter Tuning
+
+df = sqlContext.createDataFrame(CountRating)
+
+type(df)
+
+df.show(5)
+
+# Split the input data into separate training and test datasets
+
+(training, test) = df.randomSplit([0.8,0.2])
+
+from pyspark.ml.recommendation import ALS
+
+# Apply implicit parameter to the data
+
+als = ALS(implicitPrefs=True, userCol="user", itemCol="product", ratingCol="rating", coldStartStrategy="drop")
+
+als
+
+als.explainParams()
+
+from pyspark.ml import Pipeline
+
+pipeline = Pipeline(stages=[als])
+
+type(pipeline)
+
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+
+# Set the params
+
+paramImplicit = ParamGridBuilder()\
+.addGrid(als.rank,[8,12])\
+.addGrid(als.maxIter,[10,15])\
+.addGrid(als.regParam,[1.0,10.0])\
+.build()
+
+
+from pyspark.ml.evaluation import RegressionEvaluator
+
+evaluatoR = RegressionEvaluator(metricName='rmse', labelCol='rating')
+
+# Fit the estimator using params
+
+cvImplicit = CrossValidator(estimator=als, estimatorParamMaps=paramImplicit, evaluator=evaluatoR, numFolds=5)
+
+cvModel = cvImplicit.fit(training)
+
+# Fit the model
+
+# Select the model produced by the best performance set of params
+
+preds = cvModel.bestModel.transform(test)
+
+evaluator = RegressionEvaluator(metricName='rmse', labelCol='rating', predictionCol='prediction')
+
+# Find Root Mean Square Error
+
+rmse = evaluator.evaluate(preds)
+
+print("Root-mean-square error =")+ str(rmse))
