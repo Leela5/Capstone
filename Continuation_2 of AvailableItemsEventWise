@@ -1,0 +1,196 @@
+
+# RS on Transactionid only data from AvailableItemsEventWise
+
+
+# 1. Build the recommendation model using Alternating Least Squares
+
+## Creating RDD file
+
+# Option A. For comma(text) seperated data
+# lines = spark.read.text('/user/maria_dev/AvaEventAddtocart.csv').rdd
+# from pyspark.sql import Row
+# parts = lines_A.map(lambda row: row.value.split(','))
+# TransRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
+
+# Option B. For  .CSV data
+
+data = sc.textFile('/user/maria_dev/AvaEventAddtocart.csv')
+
+type(data)
+
+data.first()
+
+header=data.first()
+
+# Removing header from RDD data
+
+dataWithNoHeader = data.filter(lambda x: x!=header)
+
+dataWithNoHeader.first()
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+AddtocartRating = dataWithNoHeader.map(lambda x: x.split(',')).map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
+
+df = sqlContext.createDataFrame(AddtocartRating)
+
+# Data exploration on AddtocartRating
+
+# Distinct Users
+
+df.select('user').distinct().show(5)
+
+
+# Distinct Users's count
+
+df.select('user').distinct().count()
+
+# Distinct Products
+
+df.select('product').distinct().show(5)
+
+df.select('product').distinct().count()
+
+# GroupBy User
+
+df.groupBy('user').count().take(5)
+
+
+# GroupBy User stats
+
+df.groupBy('user').count().select('count').describe().show()
+
+
+df.stat.crosstab('user','event').show(5)
+
+
+
+# 1. Building Recommender System by useing ALS
+
+# Splitting the AddtocartRating data
+
+(training,test) = AddtocartRating.randomSplit([0.8,0.2])
+
+training.count()
+
+test.count()
+
+# Call the ALS.train mehod to train the model
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+rank = 10
+numIterations = 10
+model = ALS.train(training, rank, numIterations)
+
+model
+
+# Evaluate the model on training data
+
+testdata = test.map(lambda r: (r[0],r[1]))
+
+type(testdata)
+
+testdata.take(5)
+
+# Making predictions
+
+pred_ind = model.predict(user , product)
+
+pred_ind
+
+predictions = model.predictAll(testdata).map(lambda r: ((r[0], r[1]),r[2]))
+
+predictions.take(5)
+
+type(predictions)
+
+
+# Recommend Products For Users method to generate the top N item recommendations for users
+
+recommendItemsToUsers = model.recommendProductsForUsers(10)
+
+recommendItemsToUsers.take(1)
+
+recommendItemsToUsers.count()
+
+# Calculate rmse
+
+from math import sqrt
+
+ratesAndPreds = AddtocartRating.map(lambda r: ((r[0],r[1]), r[2])).join(predictions)
+
+ratesAndPreds.take(5)
+
+MSE= ratesAndPreds.map(lambda r: (r[1][0]-r[1][1])**2).mean()
+
+print("Mea_square_Error = " + str(MSE))
+
+# Root Mean Square Error
+
+rmse = sqrt(MSE)
+
+print("Root_Mean_Square_Error = " + str(rmse))
+
+
+# 2.  Model Evluation and Selection with Hyper Parameter Tuning
+
+df = sqlContext.createDataFrame(AddtocartRating)
+
+type(df)
+
+df.show(5)
+
+# Split the input data into training and test datasets
+
+(training, test) = df.randomSplit([0.8,0.2])
+
+# Apply implicit parameter to the data
+
+from pyspark.ml.recommendation import ALS
+
+als = ALS(implicitPrefs=True, userCol="user", itemCol="product", ratingCol="rating", coldStartStrategy="drop")
+
+als
+
+als.explainParams()
+
+from pyspark.ml import Pipeline
+
+pipeline = Pipeline(stages=[als])
+
+# Set the params
+
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+
+paramImplicit = ParamGridBuilder()\
+.addGrid(als.rank,[8,12])\
+.addGrid(als.maxIter,[10,15])\
+.addGrid(als.regParam,[1.0,10.0])\
+.build()
+
+
+from pyspark.ml.evaluation import RegressionEvaluator
+
+evaluatoR = RegressionEvaluator(metricName='rmse', labelCol='rating')
+
+# Fit the estimator using params
+
+cvImplicit = CrossValidator(estimator=als, estimatorParamMaps=paramImplicit, evaluator=evaluatoR, numFolds=5)
+
+cvModel = cvImplicit.fit(training)
+
+# Fit the model
+
+# Select the model produced by the best performance set of params
+
+preds = cvModel.bestModel.transform(test)
+
+
+evaluator = RegressionEvaluator(metricName='rmse', labelCol='rating', predictionCol='prediction')
+
+# Find Root Mean Square Error
+
+rmse = evaluator.evaluate(preds)
+
+print("Root-mean-square error ="+ str(rmse)
