@@ -7,7 +7,7 @@
 ## Creating RDD file
 
 # Option A. For comma(text) seperated data
-# lines = spark.read.text('/user/capstone/AvaEventTransaction.csv').rdd
+# lines = spark.read.text('/user/maria_dev/AvaEventTransaction.csv').rdd
 # from pyspark.sql import Row
 # parts = lines_A.map(lambda row: row.value.split(','))
 # TransRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
@@ -70,9 +70,9 @@ df.stat.crosstab('user','event').show(5)
 (training,test) = TransRating.randomSplit([0.8,0.2])
 
 training.count()
-1403870
+
 test.count()
-350671
+
 # Call the ALS.train mehod to train the model
 
 from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
@@ -93,7 +93,7 @@ testdata.take(5)
 
 # Making predictions
 
-pred_ind = model.predict(496, 395920)
+pred_ind = model.predict(user, product)
 pred_ind
 
 predictions = model.predictAll(testdata).map(lambda r: ((r[0], r[1]),r[2]))
@@ -132,7 +132,7 @@ print("Root_Mean_Square_Error = " + str(rmse))
 
 # 2.  Model Evluation and Selection with Hyper Parameter Tuning
 
-df = sqlContext.createDataFrame(TranRating)
+df = sqlContext.createDataFrame(TransRating)
 
 type(df)
 
