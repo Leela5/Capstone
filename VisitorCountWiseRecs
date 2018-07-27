@@ -49,7 +49,7 @@ data.coalesce(1).write.option('header','true').csv('/user/capstone/CountWiseVisi
 # Creating RDD file
 
 # Option A. For comma(text) seperated data 
-# lines = spark.read.text('/user/capstone/data_itemWise.csv').rdd
+# lines = spark.read.text('/user/capstone/CountWiseVisitor.csv').rdd
 # from pyspark.sql import Row
 # parts = lines_A.map(lambda row: row.value.split(','))
 # CountRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
