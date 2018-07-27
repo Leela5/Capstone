@@ -1,0 +1,92 @@
+# Recommender system for Event wise available items on Ecommerce data
+
+# Load events data from hdfs
+
+events = spark.read.options(header=True, inferSchema=True).csv('/user/capstone/events.csv')
+
+# Total count of the events data
+
+events.count()
+
+events.show(2)
+
+# distinct values of events
+
+events.distinct().count()
+
+#Group events by event column
+
+events.groupBy('event').count().show()
+
+# item data
+
+item1 = spark.read.options(header=True,inferSchema=True).csv('/user/capstone/item_properties_part1.csv')
+
+item1.show(5)
+
+item1.count()
+
+
+item2 = spark.read.options(header=True,inferSchema=True).csv('/user/capstone/item_properties_part2.csv')
+
+item2.show(5)
+
+item2.count()
+
+item = item1.unionAll(item2)
+
+item.count()
+
+item.show(5)
+
+# Select items only with categoryid
+
+itemsProperty = item[item.property == 'available']
+
+itemsProperty.show(2)
+
+itemPropertyAvailable = itemsProperty[item.value == '1']
+
+itemPropertyAvailable.show(2)
+
+itemPropertyAvailable.count()
+
+# join events data with itemPropertyAvailable
+
+EventWiseAvailability = itemPropertyAvailable.join(events, 'itemid')
+
+EventWiseAvailability.show(5)
+
+EventWiseAvailability.count()
+
+# Extract the the columns to build Recommender system
+
+data = EventWiseAvailability['visitorid','itemid','event']
+
+data.show(3)
+
+# Extract the data from data to make it event wise
+
+EventView = data[data.event == 'view']
+
+EventAddtocart = data[data.event == 'addtocart']
+
+EventTransaction = data[data.event == 'transaction']
+
+# Assign value to event
+
+AvaEventView = EventView.replace({'event.view':'1'})
+
+AvaEventAddtocart = EventAddtocart.replace({'event.addtocart':'1'})
+
+AvaEventTransaction = EventTransaction.replace({'event.transaction':'1'})
+
+# Save the data into hdfs
+
+AvaEventView.coalesce(1).write.option('header','true').csv('/user/maria_dev/AvaEventView.csv')
+
+AvaEventAddtocart.coalesce(1).write.option('header','true').csv('/user/maria_dev/AvaEventAddtocart.csv')
+
+AvaEventTransaction.coalesce(1).write.option('header','true').csv('/user/maria_dev/AvaEventTransaction.csv')
+
+
