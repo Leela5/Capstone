@@ -1,0 +1,310 @@
+# Recommendation system on Ecommerce category data
+
+# events data
+events = spark.read.options(header=True, inferSchema=True).csv('/user/capstone/events.csv')
+
+events.count()
+
+events.show(5)
+
+# Drop timestamp and transactionid as a part of cleaning NAs and noise coulmn in events data
+
+events_clean = events.drop('timestamp', 'transactionid')
+
+events_clean.show(5)
+
+# item data
+
+item1 = spark.read.options(header=True,inferSchema=True).csv('/user/capstone/item_properties_part1.csv')
+
+item1.show(5)
+
+item1.count()
+
+
+item2 = spark.read.options(header=True,inferSchema=True).csv('/user/capstone/item_properties_part2.csv')
+
+item2.show(5)
+
+item2.count()
+
+item = item1.unionAll(item2)
+
+item.count()
+
+item.show(5)
+
+# Select items only with categoryid
+
+itemsWithCategory = item[item.property == 'categoryid']
+
+itemsWithCategory.show(5)
+
+itemsWithCategory.count()
+
+# itemsWithCategory groupBy items with max timestamp
+
+itemsWithCategoryidMaxTimestamp = itemsWithCategory.groupBy('itemid').max('timestamp')
+
+itemsWithCategoryidMaxTimestamp.show(5)
+
+itemsWithCategoryidMaxTimestamp.count()
+
+# Rename the max(timestamp) as timestamp to join with itemsWithCategory
+
+item_time = itemsWithCategoryidMaxTimestamp.toDF('itemid','timestamp')
+
+item_time.show(5)
+
+# Join the itemsWithCategory and item_time
+
+itemsWithMaxTimestamCategory = itemsWithCategory.join(item_time, ['itemid','timestamp'])
+
+itemsWithMaxTimestamCategory.show(5)
+
+itemsWithMaxTimestamCategory.count()
+
+# Join the itemsWithMaxtimestampCategory with events data
+
+eventItemsWithMaxtimestamCategory = events_clean.join(itemsWithMaxtimestamCategory, ['itemid'])
+
+eventItemsWithMaxtimestamCategory.count()
+
+
+eventItemsWithMaxtimestamCategory.show(5)
+
+
+# Give values to variable event like view=1, addtocart=2,transaction=3
+
+view = eventItemsWithMaxtimestamCategory.replace({'view':'1'})
+
+addtocart = view.replace({'addtocart':'2'})
+
+CatVisitor = addtocart.replace({'transaction':'3'})
+
+CatVisitor.show(5)
+
+# Rename the value variable as category and drop property column
+
+CatVisitor_1 = CatVisitor.drop('property')
+
+CatVisitor_1.show(2)
+
+CatVisitor_2 = CatVisitor_1.toDF('itemid','visitorid','event','timestamp','categoryid')
+
+CatVisitor_2.show(2)
+
+# Extract columns visitorid, categoryid and event to create recommender matrix
+
+CatVisitor_3 = CatVisitor_2['visitorid','categoryid','event']
+
+CatVisitor_3.show(2)
+
+# Drop duplicates-take distinct values
+
+final = CatVisitor_3.distinct()
+
+final.count()
+
+# Save finalMarix into hdfs
+
+final.coalesce(1).write.option('header','true').csv('/user/maria_dev/CategoryWiseRec.csv')
+
+# Creating RDD file
+
+data = sc.textFile('/user/maria_dev/CategoryWiseRec.csv')
+
+type(data)
+
+
+data.first()
+
+
+header=data.first()
+
+# Removing header from RDD data
+
+dataWithNoHeader = data.filter(lambda x: x!=header)
+
+dataWithNoHeader.first()
+
+
+# Load ALS module, MatrixFmapactorizationModel, Rating
+
+# Creating DataFrame from RDD
+# For Text data
+#from pyspark.sql import Row
+#CountRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
+
+# For .CSV data
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+# .csv file
+CatRating = dataWithNoHeader.map(lambda x: x.split(','))\
+.map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
+
+CatRating.take(5)
+
+
+type(CatRating)
+
+df = sqlContext.createDataFrame(CatRating)
+
+# Data exploration on CatRating
+
+# Distinct Users
+
+df.select('user').distinct().show(5)
+
+# Distinct Users's count
+
+df.select('user').distinct().count()
+
+# Distinct Products
+
+df.select('product').distinct().show(5)
+
+df.select('product').distinct().count()
+
+# GroupBy User
+
+df.groupBy('user').count().take(5)
+
+# GroupBy User stats
+
+df.groupBy('user').count().select('count').describe().show()
+
+
+df.stat.crosstab('user','rating').show(5)
+
+
+# Splitting the CatRating data to apply ALS
+
+(training,test) = CatRating.randomSplit([0.8,0.2])
+
+training.count()
+
+test.count()
+
+
+# 1. Build the recommendation model using Alternating Least Squares
+
+# Call the ALS.train mehod to train the model
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+rank = 10
+numIterations = 10
+model = ALS.train(training, rank, numIterations)
+
+model
+
+# Evaluate the model on training data
+
+testdata = test.map(lambda r: (r[0],r[1]))
+
+type(testdata)
+
+test.take(5)
+
+
+# Making predictions
+
+pred_ind = model.predict(x,y)
+pred_ind
+
+
+predictions = model.predictAll(testdata).map(lambda r: ((r[0], r[1]),r[2]))
+
+predictions.take(5)
+
+type(predictions)
+
+# Recommend Products For Users method to generate the top N item recommendations for users
+
+recommendItemsToUsers = model.recommendProductsForUsers(10)
+
+recommendItemsToUsers.take(1)
+
+recommendItemsToUsers.count()
+
+# Calculate rmse
+from math import sqrt
+
+ratesAndPreds = CatRating.map(lambda r: ((r[0],r[1]), r[2])).join(predictions)
+
+ratesAndPreds.take(5)
+
+MSE = ratesAndPreds.map(lambda r: (r[1][0]-r[1][1])**2).mean()
+
+print("MeanSquareError = " + str(MSE))
+
+# Root Mean Square Error
+
+rmse = sqrt(MSE)
+
+print("Root_Mean_Square_Error = " + str(rmse))
+
+
+# 2.  Model Evluation and Selection with Hyper Parameter Tuning
+
+df = sqlContext.createDataFrame(CatRating)
+
+type(df)
+
+df.show(5)
+
+# Split the input data into training and test datasets
+
+(training, test) = df.randomSplit([0.8,0.2])
+
+
+
+# Apply implicit parameter to the data
+
+from pyspark.ml.recommendation import ALS
+
+als = ALS(implicitPrefs=True, userCol="user", itemCol="product", ratingCol="rating", coldStartStrategy="drop")
+
+als
+
+als.explainParams()
+
+from pyspark.ml import Pipeline
+
+pipeline = Pipeline(stages=[als])
+
+# Set the params
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+
+paramImplicit = ParamGridBuilder()\
+.addGrid(als.rank,[8,12])\
+.addGrid(als.maxIter,[10,15])\
+.addGrid(als.regParam,[1.0,10.0])\
+.build()
+
+
+from pyspark.ml.evaluation import RegressionEvaluator
+
+evaluatoR = RegressionEvaluator(metricName='rmse', labelCol='rating')
+
+# Fit the estimator using params
+
+cvImplicit = CrossValidator(estimator=als, estimatorParamMaps=paramImplicit, evaluator=evaluatoR, numFolds=5)
+
+cvModel = cvImplicit.fit(training)
+
+# Fit the model
+
+# Select the model produced by the best performance set of params
+
+preds = cvModel.bestModel.transform(test)
+
+evaluator = RegressionEvaluator(metricName='rmse', labelCol='rating', predictionCol='prediction')
+
+# Find Root Mean Square Error
+
+rmse = evaluator.evaluate(preds)
+
+print("Root_mean_square error = ") + str(rmse)
