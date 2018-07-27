@@ -1,6 +1,7 @@
 
 # RS on Transactionid only data from AvailableItemsEventWise
 
+
 # 1. Build the recommendation model using Alternating Least Squares
 
 ## Creating RDD file
@@ -31,9 +32,9 @@ from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
 
 TransRating = dataWithNoHeader.map(lambda x: x.split(',')).map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
 
-df = sqlContext.createDataFrame(TranRating)
+df = sqlContext.createDataFrame(TransRating)
 
-# Data exploration on CountVisitor
+# Data exploration on TransRating
 
 # Distinct Users
 
@@ -62,10 +63,11 @@ df.groupBy('user').count().select('count').describe().show()
 
 df.stat.crosstab('user','event').show(5)
 
+# 1. Building Recommender System by useing ALS
 
-# Splitting the CountRating data
+# Splitting the TransRating data
 
-(training,test) = TranRating.randomSplit([0.8,0.2])
+(training,test) = TransRating.randomSplit([0.8,0.2])
 
 training.count()
 1403870
@@ -87,7 +89,7 @@ testdata = test.map(lambda r: (r[0],r[1]))
 
 type(testdata)
 
-test.take(5)
+testdata.take(5)
 
 # Making predictions
 
@@ -110,21 +112,22 @@ recommendItemsToUsers.take(1)
 recommendItemsToUsers.count()
 
 # Calculate rmse
+
 from math import sqrt
 
-ratesAndPreds = TranRating.map(lambda r: ((r[0],r[1]), r[2])).join(predictions)
+ratesAndPreds = TransRating.map(lambda r: ((r[0],r[1]), r[2])).join(predictions)
 
 ratesAndPreds.take(5)
 
 MSE= ratesAndPreds.map(lambda r: (r[1][0]-r[1][1])**2).mean()
 
-MSE
+print("Mea_square_Error = " + str(MSE))
 
 # Root Mean Square Error
 
 rmse = sqrt(MSE)
 
-rmse
+print("Root_Mean_Square_Error = " + str(rmse))
 
 
 # 2.  Model Evluation and Selection with Hyper Parameter Tuning
@@ -139,9 +142,9 @@ df.show(5)
 
 (training, test) = df.randomSplit([0.8,0.2])
 
-from pyspark.ml.recommendation import ALS
-
 # Apply implicit parameter to the data
+
+from pyspark.ml.recommendation import ALS
 
 als = ALS(implicitPrefs=True, userCol="user", itemCol="product", ratingCol="rating", coldStartStrategy="drop")
 
@@ -153,9 +156,9 @@ from pyspark.ml import Pipeline
 
 pipeline = Pipeline(stages=[als])
 
-from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
-
 # Set the params
+
+from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 
 paramImplicit = ParamGridBuilder()\
 .addGrid(als.rank,[8,12])\
@@ -177,6 +180,7 @@ cvModel = cvImplicit.fit(training)
 # Fit the model
 
 # Select the model produced by the best performance set of params
+
 preds = cvModel.bestModel.transform(test)
 
 
@@ -186,4 +190,4 @@ evaluator = RegressionEvaluator(metricName='rmse', labelCol='rating', prediction
 
 rmse = evaluator.evaluate(preds)
 
-print("Root-mean-square error =")+str(rmse)
+print("Root-mean-square error ="+ str(rmse)
