@@ -13,7 +13,7 @@ visitorGroupBy.show(5)
 
 visitorGroupBy.count()
 
-# select visitor who has more than one
+# select visitor who has more than one visit
 
 visitorGt1 = visitorGroupBy.filter(visitorGroupBy['count']>1)
 
@@ -49,18 +49,14 @@ data.coalesce(1).write.option('header','true').csv('/user/capstone/CountWiseVisi
 # Creating RDD file
 
 # Option A. For comma(text) seperated data 
-
+# lines = spark.read.text('/user/capstone/data_itemWise.csv').rdd
 # from pyspark.sql import Row
-# parts = data_A.map(lambda row: row.value.split(','))
+# parts = lines_A.map(lambda row: row.value.split(','))
 # CountRating = parts.map(lambda p: Row(visitorid=int(p[0]),itemid=int(p[1]),event=float(p[2])))
 
 # Option B. For  .CSV data
 
-# data = sc.textFile('/user/maria_dev/CountWiseVisitor.csv')
-# from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
-#CountRating = dataWithNoHeader.map(lambda x: x.split(','))\
-#.map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
-
+data = sc.textFile('/user/maria_dev/CountWiseVisitor.csv')
 
 type(data)
 
@@ -73,6 +69,10 @@ header=data.first()
 dataWithNoHeader = data.filter(lambda x: x!=header)
 
 dataWithNoHeader.first()
+
+from pyspark.mllib.recommendation import ALS, MatrixFactorizationModel, Rating
+
+CountRating = dataWithNoHeader.map(lambda x: x.split(',')).map(lambda x: Rating(int(x[0]), int(x[1]), float(x[2])))
 
 # Load ALS module, MatrixFactorizationModel, Rating
 
