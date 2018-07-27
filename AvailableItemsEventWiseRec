@@ -75,11 +75,23 @@ EventTransaction = data[data.event == 'transaction']
 
 # Assign value to event
 
-AvaEventView = EventView.replace({'event.view':'1'})
+AvaEventView = EventView.replace({'view':'1'})
 
-AvaEventAddtocart = EventAddtocart.replace({'event.addtocart':'1'})
+AvaEventView.count()
 
-AvaEventTransaction = EventTransaction.replace({'event.transaction':'1'})
+AvaEventView.show(2)
+
+AvaEventAddtocart = EventAddtocart.replace({'addtocart':'1'})
+
+AvaEventAddtocart.count()
+
+AvaEventAddtocart.show(2)
+
+AvaEventTransaction = EventTransaction.replace({'transaction':'1'})
+
+AvaEventTransaction.cout()
+
+AvaEventTransaction.show(2)
 
 # Save the data into hdfs
 
