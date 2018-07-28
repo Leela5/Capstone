@@ -39,7 +39,7 @@ item.count()
 
 item.show(5)
 
-# Select items only with categoryid
+# Select available items only
 
 itemsProperty = item[item.property == 'available']
 
