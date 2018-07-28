@@ -56,6 +56,8 @@ item_time = itemsWithCategoryidMaxTimestamp.toDF('itemid','timestamp')
 
 item_time.show(5)
 
+item_time.count()
+
 # Join the itemsWithCategory and item_time
 
 itemsWithMaxTimestamCategory = itemsWithCategory.join(item_time, ['itemid','timestamp'])
